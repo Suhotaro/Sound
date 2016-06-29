@@ -89,34 +89,11 @@ int main(int argc, char **argv)
 
 	fprintf(stdout, "Using " BACKEND " as audio backend\n");
 
-	enumeration = alcIsExtensionPresent(NULL, "ALC_ENUMERATION_EXT");
-	if (enumeration == AL_FALSE)
-		fprintf(stderr, "enumeration extension not available\n");
+	alutInit(NULL, NULL);
 
-	list_audio_devices(alcGetString(NULL, ALC_DEVICE_SPECIFIER));
-
-	if (!defaultDeviceName)
-		defaultDeviceName = alcGetString(NULL, ALC_DEFAULT_DEVICE_SPECIFIER);
-
-	device = alcOpenDevice(defaultDeviceName);
-	if (!device) {
-		fprintf(stderr, "unable to open default device\n");
-		return -1;
-	}
-
-	fprintf(stdout, "Device: %s  --> %s\n", alcGetString(device, ALC_DEVICE_SPECIFIER), defaultDeviceName);
-
-	alGetError();
-
-	context = alcCreateContext(device, NULL);
-	if (!alcMakeContextCurrent(context)) {
-		fprintf(stderr, "failed to make default context\n");
-		return -1;
-	}
-	TEST_ERROR("make default context");
 
 	/* listener */
-	alListener3f(AL_POSITION, 0, 0, 1.0f);
+	alListener3f(AL_POSITION, 0, 0, 0);
 	TEST_ERROR("listener position");
 
     alListener3f(AL_VELOCITY, 0, 0, 0);
@@ -135,7 +112,7 @@ int main(int argc, char **argv)
 	alSourcef(source, AL_GAIN, 1);
 	TEST_ERROR("source gain");
 
-	alSource3f(source, AL_POSITION, 0, 0, 0);
+	alSource3f(source, AL_POSITION, -8, 0, 0);
 	TEST_ERROR("source position");
 
 	alSource3f(source, AL_VELOCITY, 0, 0, 0);
@@ -152,7 +129,7 @@ int main(int argc, char **argv)
 	printf("libaudio\n");
 
 	/* load data */
-	wave = WaveOpenFileForReading("../wav_file/test.wav");
+	wave = WaveOpenFileForReading("../wav_files/nightfall.wav");
 	if (!wave) {
 		fprintf(stderr, "failed to read wave file\n");
 		return -1;
@@ -181,13 +158,8 @@ int main(int argc, char **argv)
 	TEST_ERROR("failed to load buffer data");
 #else
 
-	printf("no libaudio\n");
-
-	alutLoadWAVFile("../wav_file/test.wav", &format, &data, &size, &freq, &loop);
+	alutLoadWAVFile("../wav_files/bounce.wav", &format, &data, &size, &freq, &loop);
 	TEST_ERROR("loading wav file");
-
-	freq = 128000;
-
 	printf("buffer data:\n"
 			"  format -> %d\n"
 			"  size -> %d\n"
@@ -207,22 +179,26 @@ int main(int argc, char **argv)
 	alGetSourcei(source, AL_SOURCE_STATE, &source_state);
 	TEST_ERROR("source state get");
 
-	int times = 0;
+	int dx = -8;
+	printf("dx=%d\n", dx);
 
-	alSourcePlay(source);
+	while(dx != 8)
+	{
+		if (source_state != AL_PLAYING)
+		{
+			dx += 1;
 
+			printf("dx=%d\n", dx);
 
-	sleep(5);
+			alSource3f(source, AL_POSITION, dx, 0, 0);
 
-	/*
-	while (source_state == AL_PLAYING) {
-
-		//printf("times state %d\n", ++times);
+			alSourcePlay(source);
+			TEST_ERROR("source playing");
+		}
 
 		alGetSourcei(source, AL_SOURCE_STATE, &source_state);
-		TEST_ERROR("source state get");
 	}
-	*/
+
 
 	/* exit context */
 	alDeleteSources(1, &source);
