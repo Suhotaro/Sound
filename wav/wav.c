@@ -67,7 +67,7 @@ int main (int argc, char *argv[])
     memcpy(subchunk1Id, wav.subchunk1Id, sizeof(wav.subchunk1Id));
     memcpy(subchunk2Id, wav.subchunk2Id, sizeof(wav.subchunk2Id));
 
-    printf("file \"%s\" info:\n"
+    printf("file \"%s\" info:   \n"
            "  chunckId: %s      \n"
     	   "  chunckSize: %d    \n"
      	   "  format: %s        \n"
