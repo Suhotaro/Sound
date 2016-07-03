@@ -14,30 +14,11 @@
 
 #include <AL/al.h>
 #include <AL/alc.h>
-
-#ifdef LIBAUDIO
-#include <audio/wave.h>
-#define BACKEND	"libaudio"
-#else
 #include <AL/alut.h>
+
 #define BACKEND "alut"
-#endif
+#define DX 10
 
-static void list_audio_devices(const ALCchar *devices)
-{
-	const ALCchar *device = devices, *next = devices + 1;
-	size_t len = 0;
-
-	fprintf(stdout, "Devices list:\n");
-	fprintf(stdout, "----------\n");
-	while (device && *device != '\0' && next && *next != '\0') {
-		fprintf(stdout, "%s\n", device);
-		len = strlen(device);
-		device += (len + 1);
-		next += (len + 2);
-	}
-	fprintf(stdout, "----------\n");
-}
 
 #define TEST_ERROR(_msg)		\
 	error = alGetError();		\
@@ -46,35 +27,12 @@ static void list_audio_devices(const ALCchar *devices)
 		return -1;		\
 	}
 
-static inline ALenum to_al_format(short channels, short samples)
-{
-	bool stereo = (channels > 1);
-
-	switch (samples) {
-	case 16:
-		if (stereo)
-			return AL_FORMAT_STEREO16;
-		else
-			return AL_FORMAT_MONO16;
-	case 8:
-		if (stereo)
-			return AL_FORMAT_STEREO8;
-		else
-			return AL_FORMAT_MONO8;
-	default:
-		return -1;
-	}
-}
-
 int main(int argc, char **argv)
 {
 	ALboolean enumeration;
 	const ALCchar *devices;
 	const ALCchar *defaultDeviceName = argv[1];
 	int ret;
-#ifdef LIBAUDIO
-	WaveInfo *wave;
-#endif
 	char *bufferData;
 	ALCdevice *device;
 	ALvoid *data;
@@ -90,6 +48,7 @@ int main(int argc, char **argv)
 	fprintf(stdout, "Using " BACKEND " as audio backend\n");
 
 	alutInit(NULL, NULL);
+	TEST_ERROR("init Alut");
 
 
 	/* listener */
@@ -124,41 +83,7 @@ int main(int argc, char **argv)
 	alGenBuffers(1, &buffer);
 	TEST_ERROR("buffer generation");
 
-#ifdef LIBAUDIO
-
-	printf("libaudio\n");
-
-	/* load data */
-	wave = WaveOpenFileForReading("../wav_files/nightfall.wav");
-	if (!wave) {
-		fprintf(stderr, "failed to read wave file\n");
-		return -1;
-	}
-
-	ret = WaveSeekFile(0, wave);
-	if (ret) {
-		fprintf(stderr, "failed to seek wave file\n");
-		return -1;
-	}
-
-	bufferData = malloc(wave->dataSize);
-	if (!bufferData) {
-		perror("malloc");
-		return -1;
-	}
-
-	ret = WaveReadFile(bufferData, wave->dataSize, wave);
-	if (ret != wave->dataSize) {
-		fprintf(stderr, "short read: %d, want: %d\n", ret, wave->dataSize);
-		return -1;
-	}
-
-	alBufferData(buffer, to_al_format(wave->channels, wave->bitsPerSample),
-			bufferData, wave->dataSize, wave->sampleRate);
-	TEST_ERROR("failed to load buffer data");
-#else
-
-	alutLoadWAVFile("../wav_files/bounce.wav", &format, &data, &size, &freq, &loop);
+	alutLoadWAVFile("../wav_files/bs1.wav", &format, &data, &size, &freq, &loop);
 	TEST_ERROR("loading wav file");
 	printf("buffer data:\n"
 			"  format -> %d\n"
@@ -168,7 +93,6 @@ int main(int argc, char **argv)
 
 	alBufferData(buffer, format, data, size, freq);
 	TEST_ERROR("buffer copy");
-#endif
 
 	alSourcei(source, AL_BUFFER, buffer);
 	TEST_ERROR("buffer binding");
@@ -179,24 +103,41 @@ int main(int argc, char **argv)
 	alGetSourcei(source, AL_SOURCE_STATE, &source_state);
 	TEST_ERROR("source state get");
 
-	int dx = -8;
+	int dx = -DX;
+	int left = 0, right = 1;
 	printf("dx=%d\n", dx);
 
-	while(dx != 8)
+	while(source_state == AL_PLAYING)
 	{
-		if (source_state != AL_PLAYING)
+		if (left == 1)
 		{
-			dx += 1;
-
+			dx -= 1;
 			printf("dx=%d\n", dx);
 
-			alSource3f(source, AL_POSITION, dx, 0, 0);
+			alSource3f(source, AL_POSITION, -dx, 0, dx);
 
-			alSourcePlay(source);
-			TEST_ERROR("source playing");
+			if (dx == -DX)
+			{
+				right = 1;
+				left = 0;
+			}
+		}
+		else if (right == 1)
+		{
+			dx += 1;
+			printf("dx=%d\n", dx);
+
+			alSource3f(source, AL_POSITION, -dx, 0, dx);
+
+			if (dx == DX)
+			{
+				right = 0;
+				left = 1;
+			}
 		}
 
 		alGetSourcei(source, AL_SOURCE_STATE, &source_state);
+		sleep(1);
 	}
 
 
