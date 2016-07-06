@@ -1,9 +1,10 @@
 CC?=gcc
 LDLIBS?=-lopenal
 ifeq ($(LIBAUDIO),1)
-CFLAGS+=-DLIBAUDIO
+CFLAGS+=-DLIBAUDIO -g3 -O0
 LDLIBS+=-laudio
 else
+CFLAGS+= -g3 -O0
 LDLIBS+=-lalut
 endif
 APP:=openal-example

@@ -16,138 +16,232 @@
 #include <AL/alc.h>
 #include <AL/alut.h>
 
-#define BACKEND "alut"
-#define DX 10
-
-
-#define TEST_ERROR(_msg)		\
+#define RETURNIFERROR(_msg)		\
 	error = alGetError();		\
 	if (error != AL_NO_ERROR) {	\
-		fprintf(stderr, _msg "\n");	\
-		return -1;		\
+		fprintf(stderr, "ERROR: "_msg "\n");	\
+		return;		\
 	}
+
+#define RETURNVALIFERROR(val, _msg)		\
+	error = alGetError();		\
+	if (error != AL_NO_ERROR) {	\
+		fprintf(stderr, "ERROR: "_msg "\n");	\
+		return val;		\
+	}
+
+typedef struct
+{
+	ALfloat orientation[6];
+
+	struct
+	{
+		ALfloat x;
+		ALfloat y;
+		ALfloat z;
+	} position, velocity;
+} Listener, *ListenerPtr;
+
+
+typedef struct
+{
+	ALuint id;
+	ALuint source;
+
+	ALint state;
+
+	ALfloat pitch;
+	ALfloat gain;
+	ALboolean loop;
+
+	struct
+	{
+		ALfloat x;
+		ALfloat y;
+		ALfloat z;
+	} position, velocity;
+} Source, *SourcePtr;
+
+typedef struct
+{
+	ALuint buffer;
+	ALuint id;
+	ALbyte *file;
+
+	ALvoid *data;
+    ALenum format;
+    ALsizei size, freq;
+    ALboolean loop;
+} Buffer, *BufferPtr;
+
+
+ListenerPtr listener_create(ALfloat *orientation,
+		                    int px, int py, int pz,
+							int vx, int vy, int vz)
+{
+	int i = 0;
+
+	/* TODO: Add NULL checks */
+	ListenerPtr l = calloc(1, sizeof(Listener));
+
+	l->position.x = px;
+	l->position.y = py;
+	l->position.z = pz;
+
+	l->velocity.x = vx;
+	l->velocity.y = vy;
+	l->velocity.z = vz;
+
+	for (i = 0 ; i < 6; i++)
+		l->orientation[i] = orientation[i];
+
+	return l;
+}
+
+void listener_delete(ListenerPtr l)
+{
+	free(l);
+}
+
+void listener_apply(ListenerPtr l)
+{
+	ALCenum error;
+
+	alListener3f(AL_POSITION, l->position.x,
+			     l->position.y, l->position.z);
+	RETURNIFERROR("listener position");
+
+    alListener3f(AL_VELOCITY, l->velocity.x,
+    		     l->velocity.y, l->velocity.z);
+	RETURNIFERROR("listener velocity");
+
+	alListenerfv(AL_ORIENTATION, l->orientation);
+	RETURNIFERROR("listener orientation");
+}
+
+SourcePtr source_create(int id, ALfloat pitch, ALfloat gain,
+		                int px, int py, int pz,
+						int vx, int vy, int vz)
+{
+	/* TODO: Add NULL checks */
+	SourcePtr s = calloc(1, sizeof(Source));
+
+	s->id = id;
+
+	s->position.x = px;
+	s->position.y = py;
+	s->position.z = pz;
+
+	s->velocity.x = vx;
+	s->velocity.y = vy;
+	s->velocity.z = vz;
+
+	s->pitch = pitch;
+	s->gain = gain;
+	s->loop = 0;
+
+	s->state = 0;
+
+	return s;
+}
+
+void source_apply(SourcePtr s)
+{
+	ALCenum error;
+
+	alGenSources(s->id, &s->source);
+	RETURNIFERROR("source generation");
+	/* source */
+	alSourcef(s->source, AL_PITCH, s->pitch);
+	RETURNIFERROR("source pitch");
+
+	alSourcef(s->source, AL_GAIN, s->gain);
+	RETURNIFERROR("source gain");
+
+	alSource3f(s->source, AL_POSITION,
+			   s->position.x, s->position.y,
+			   s->position.z);
+	RETURNIFERROR("source position");
+
+	alSource3f(s->source, AL_VELOCITY,
+			   s->velocity.x, s->velocity.y,
+			   s->velocity.z);
+	RETURNIFERROR("source velocity");
+
+	alSourcei(s->source, AL_LOOPING, s->loop);
+	RETURNIFERROR("source looping");
+}
+
+void source_delete(SourcePtr s)
+{
+	alDeleteSources(s->id, &s->source);
+	free(s);
+}
+
+BufferPtr buffer_create(int id,  ALbyte *file)
+{
+	ALCenum error;
+
+	/* TODO: Add NULL checks */
+	BufferPtr b = calloc(1, sizeof(Buffer));
+
+	b->id = id;
+	b->file = file;
+
+	alGenBuffers(b->id, &b->buffer);
+	RETURNIFERROR("buffer generation");
+
+	alutLoadWAVFile(file, &b->format, &b->data,
+					&b->size, &b->freq, &b->loop);
+	RETURNIFERROR("loading wav file");
+
+	printf("buffer data:\n"
+				"  format -> %d\n"
+				"  size -> %d\n"
+				"  freq -> %d\n",
+				b->format, b->size, b->freq);
+
+	alBufferData(b->buffer, b->format, b->data, b->size, b->freq);
+	RETURNIFERROR("buffer copy");
+
+	return b;
+}
+
+void buffer_delete(BufferPtr b)
+{
+	alDeleteBuffers(b->id, &b->buffer);
+	free(b);
+}
 
 int main(int argc, char **argv)
 {
-	ALboolean enumeration;
-	const ALCchar *devices;
-	const ALCchar *defaultDeviceName = argv[1];
-	int ret;
-	char *bufferData;
-	ALCdevice *device;
-	ALvoid *data;
-	ALCcontext *context;
-	ALsizei size, freq;
-	ALenum format;
-	ALuint buffer, source;
-	ALfloat listenerOri[] = { 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f };
-	ALboolean loop = AL_FALSE;
 	ALCenum error;
-	ALint source_state;
-
-	fprintf(stdout, "Using " BACKEND " as audio backend\n");
 
 	alutInit(NULL, NULL);
-	TEST_ERROR("init Alut");
+	RETURNVALIFERROR(-1, "init Alut");
 
 
-	/* listener */
-	alListener3f(AL_POSITION, 0, 0, 0);
-	TEST_ERROR("listener position");
+	ALfloat listenerOri[] = { 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f };
 
-    alListener3f(AL_VELOCITY, 0, 0, 0);
-	TEST_ERROR("listener velocity");
+	ListenerPtr listener = listener_create(listenerOri, 0, 0, 0, 0, 0, 0);
+	listener_apply(listener);
 
-	alListenerfv(AL_ORIENTATION, listenerOri);
-	TEST_ERROR("listener orientation");
+	SourcePtr s = source_create(1, 1, 1, 0, 0, 0, 0, 0, 0);
+	source_apply(s);
 
-	alGenSources((ALuint)1, &source);
-	TEST_ERROR("source generation");
+	BufferPtr b = buffer_create(1, (ALbyte *)"../wav_files/bs1.wav");
 
-	/* source */
-	alSourcef(source, AL_PITCH, 1);
-	TEST_ERROR("source pitch");
+	alSourcei(s->source, AL_BUFFER, b->buffer);
+	RETURNVALIFERROR(-1, "buffer binding");
 
-	alSourcef(source, AL_GAIN, 1);
-	TEST_ERROR("source gain");
+	alSourcePlay(s->source);
+	RETURNVALIFERROR(-1, "source playing");
 
-	alSource3f(source, AL_POSITION, -8, 0, 0);
-	TEST_ERROR("source position");
+	alGetSourcei(s->source, AL_SOURCE_STATE, &s->state);
+	RETURNVALIFERROR(-1, "source state get");
 
-	alSource3f(source, AL_VELOCITY, 0, 0, 0);
-	TEST_ERROR("source velocity");
-
-	alSourcei(source, AL_LOOPING, AL_FALSE);
-	TEST_ERROR("source looping");
-
-	alGenBuffers(1, &buffer);
-	TEST_ERROR("buffer generation");
-
-	alutLoadWAVFile("../wav_files/bs1.wav", &format, &data, &size, &freq, &loop);
-	TEST_ERROR("loading wav file");
-	printf("buffer data:\n"
-			"  format -> %d\n"
-			"  size -> %d\n"
-			"  freq -> %d\n",
-			format, size, freq);
-
-	alBufferData(buffer, format, data, size, freq);
-	TEST_ERROR("buffer copy");
-
-	alSourcei(source, AL_BUFFER, buffer);
-	TEST_ERROR("buffer binding");
-
-	alSourcePlay(source);
-	TEST_ERROR("source playing");
-
-	alGetSourcei(source, AL_SOURCE_STATE, &source_state);
-	TEST_ERROR("source state get");
-
-	int dx = -DX;
-	int left = 0, right = 1;
-	printf("dx=%d\n", dx);
-
-	while(source_state == AL_PLAYING)
-	{
-		if (left == 1)
-		{
-			dx -= 1;
-			printf("dx=%d\n", dx);
-
-			alSource3f(source, AL_POSITION, -dx, 0, dx);
-
-			if (dx == -DX)
-			{
-				right = 1;
-				left = 0;
-			}
-		}
-		else if (right == 1)
-		{
-			dx += 1;
-			printf("dx=%d\n", dx);
-
-			alSource3f(source, AL_POSITION, -dx, 0, dx);
-
-			if (dx == DX)
-			{
-				right = 0;
-				left = 1;
-			}
-		}
-
-		alGetSourcei(source, AL_SOURCE_STATE, &source_state);
-		sleep(1);
-	}
-
-
-	/* exit context */
-	alDeleteSources(1, &source);
-	alDeleteBuffers(1, &buffer);
-	device = alcGetContextsDevice(context);
-	alcMakeContextCurrent(NULL);
-	alcDestroyContext(context);
-	alcCloseDevice(device);
+	while(s->state == AL_PLAYING)
+		alGetSourcei(s->source, AL_SOURCE_STATE, &s->state);
 
 	return 0;
 }
