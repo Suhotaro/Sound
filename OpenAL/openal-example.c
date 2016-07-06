@@ -79,6 +79,7 @@ ListenerPtr listener_create(ALfloat *orientation,
 		                    int px, int py, int pz,
 							int vx, int vy, int vz)
 {
+	ALCenum error;
 	int i = 0;
 
 	/* TODO: Add NULL checks */
@@ -95,18 +96,6 @@ ListenerPtr listener_create(ALfloat *orientation,
 	for (i = 0 ; i < 6; i++)
 		l->orientation[i] = orientation[i];
 
-	return l;
-}
-
-void listener_delete(ListenerPtr l)
-{
-	free(l);
-}
-
-void listener_apply(ListenerPtr l)
-{
-	ALCenum error;
-
 	alListener3f(AL_POSITION, l->position.x,
 			     l->position.y, l->position.z);
 	RETURNIFERROR("listener position");
@@ -117,12 +106,21 @@ void listener_apply(ListenerPtr l)
 
 	alListenerfv(AL_ORIENTATION, l->orientation);
 	RETURNIFERROR("listener orientation");
+
+	return l;
+}
+
+void listener_delete(ListenerPtr l)
+{
+	free(l);
 }
 
 SourcePtr source_create(int id, ALfloat pitch, ALfloat gain,
 		                int px, int py, int pz,
 						int vx, int vy, int vz)
 {
+	ALCenum error;
+
 	/* TODO: Add NULL checks */
 	SourcePtr s = calloc(1, sizeof(Source));
 
@@ -141,13 +139,6 @@ SourcePtr source_create(int id, ALfloat pitch, ALfloat gain,
 	s->loop = 0;
 
 	s->state = 0;
-
-	return s;
-}
-
-void source_apply(SourcePtr s)
-{
-	ALCenum error;
 
 	alGenSources(s->id, &s->source);
 	RETURNIFERROR("source generation");
@@ -170,6 +161,8 @@ void source_apply(SourcePtr s)
 
 	alSourcei(s->source, AL_LOOPING, s->loop);
 	RETURNIFERROR("source looping");
+
+	return s;
 }
 
 void source_delete(SourcePtr s)
@@ -220,15 +213,10 @@ int main(int argc, char **argv)
 	alutInit(NULL, NULL);
 	RETURNVALIFERROR(-1, "init Alut");
 
-
 	ALfloat listenerOri[] = { 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f };
 
 	ListenerPtr listener = listener_create(listenerOri, 0, 0, 0, 0, 0, 0);
-	listener_apply(listener);
-
 	SourcePtr s = source_create(1, 1, 1, 0, 0, 0, 0, 0, 0);
-	source_apply(s);
-
 	BufferPtr b = buffer_create(1, (ALbyte *)"../wav_files/bs1.wav");
 
 	alSourcei(s->source, AL_BUFFER, b->buffer);
