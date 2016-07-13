@@ -30,6 +30,12 @@
 		return val;		\
 	}
 
+#define IFERROR(_msg)		\
+	error = alGetError();		\
+	if (error != AL_NO_ERROR) {	\
+		fprintf(stderr, "ERROR: "_msg "\n");	\
+	}
+
 typedef struct
 {
 	ALfloat orientation[6];
@@ -42,6 +48,14 @@ typedef struct
 	} position, velocity;
 } Listener, *ListenerPtr;
 
+
+typedef enum
+{
+	SIMPLE = 0,
+	MOVING_SRC,
+	DOPPLER,
+	CONE_SOUND
+} test_num;
 
 typedef struct
 {
@@ -191,7 +205,7 @@ BufferPtr buffer_create(int id,  ALbyte *file)
 	printf("buffer data:\n"
 				"  format -> %d\n"
 				"  size -> %d\n"
-				"  freq -> %d\n",
+				"  freq -> %d\n\n",
 				b->format, b->size, b->freq);
 
 	alBufferData(b->buffer, b->format, b->data, b->size, b->freq);
@@ -206,9 +220,115 @@ void buffer_delete(BufferPtr b)
 	free(b);
 }
 
+void test_simple(SourcePtr s)
+{
+	while(s->state == AL_PLAYING)
+			alGetSourcei(s->source, AL_SOURCE_STATE, &s->state);
+}
+
+void test_moving_src(SourcePtr s)
+{
+	int x = 10;
+	int dx = -1;
+
+	alSource3f(s->source, AL_POSITION, x, 0, 0);
+
+	while(s->state == AL_PLAYING)
+	{
+		if (x == 10)
+			dx = -1;
+		else if (x == -10)
+			dx = 1;
+
+		x += dx;
+		printf("x: %d\n", x);
+
+		alSource3f(s->source, AL_POSITION, x, 0, 0);
+		alGetSourcei(s->source, AL_SOURCE_STATE, &s->state);
+
+		usleep(500000);
+	}
+}
+
+void test_doppler(SourcePtr s)
+{
+	int x = 10;
+	int dx = -1;
+
+	alSourcef(s->source, AL_GAIN, 0.5);
+	alSource3f(s->source, AL_POSITION, x, 0, 0);
+	alSource3f(s->source, AL_VELOCITY, -10, 0, 0);
+
+	while(s->state == AL_PLAYING)
+	{
+		if (x == -10)
+			x = 10;
+
+		x += dx;
+
+		printf("x: %d\n", x);
+
+		alSource3f(s->source, AL_POSITION, x, 0, 0);
+		alGetSourcei(s->source, AL_SOURCE_STATE, &s->state);
+
+		usleep(500000);
+	}
+}
+
+void test_cone_sound(SourcePtr s)
+{
+	ALCenum error;
+	int x[16] = {2, 2, 2, 1, 0,-1,-2,-2,-2,-2,-2,-1, 0, 1, 2, 2 };
+	int y[16] = {0,-1,-2,-2,-2,-2,-2,-1, 0, 1, 2, 2, 2, 2, 2, 1 };
+	int clock_wize = 1;
+	int i = 0;
+
+
+	/* TODO: check source axis and axis sound is round in*/
+
+	alSourcef(s->source, AL_GAIN, 0.3);
+	IFERROR("Gain");
+
+	alSourcef(s->source, AL_CONE_OUTER_GAIN, 0.0);
+	IFERROR("Outer Gain");
+
+	alSource3f(s->source, AL_POSITION, 0, 5, 0);
+	IFERROR("Position");
+
+	/* Cone parameters */
+	alSource3f(s->source, AL_DIRECTION, 0, -2, 0);
+	IFERROR("Direction");
+
+	alSourcef(s->source, AL_CONE_INNER_ANGLE, 30.0);
+	IFERROR("Inner");
+
+	alSourcef(s->source, AL_CONE_OUTER_ANGLE, 200.0);
+	IFERROR("Outer");
+
+	while(s->state == AL_PLAYING)
+	{
+		printf("i:%2d x:%2d y:%2d\n", i, x[i], y[i]);
+		alSource3f(s->source, AL_DIRECTION, x[i], y[i], 0);
+		IFERROR("Direction");
+
+		i+=1;
+
+		if (i == 16)
+			i = 0;
+
+		alGetSourcei(s->source, AL_SOURCE_STATE, &s->state);
+
+		usleep(1000000);
+	}
+}
+
 int main(int argc, char **argv)
 {
 	ALCenum error;
+	int test = CONE_SOUND;
+
+	if (argc > 1)
+		test = atoi( argv[1]);
 
 	alutInit(NULL, NULL);
 	RETURNVALIFERROR(-1, "init Alut");
@@ -217,6 +337,8 @@ int main(int argc, char **argv)
 
 	ListenerPtr listener = listener_create(listenerOri, 0, 0, 0, 0, 0, 0);
 	SourcePtr s = source_create(1, 1, 1, 0, 0, 0, 0, 0, 0);
+
+	/* Put here your files */
 	BufferPtr b = buffer_create(1, (ALbyte *)"../wav_files/bs1.wav");
 
 	alSourcei(s->source, AL_BUFFER, b->buffer);
@@ -228,8 +350,31 @@ int main(int argc, char **argv)
 	alGetSourcei(s->source, AL_SOURCE_STATE, &s->state);
 	RETURNVALIFERROR(-1, "source state get");
 
-	while(s->state == AL_PLAYING)
-		alGetSourcei(s->source, AL_SOURCE_STATE, &s->state);
+	/*
+	 *  To hear sound with 3D effects samples MUST have only ONE chanell
+	 */
+	switch(test)
+	{
+		case SIMPLE:
+			printf("Simple:\n");
+			test_simple(s);
+
+		case MOVING_SRC:
+			printf("Moving source:\n");
+			test_moving_src(s);
+
+		case DOPPLER:
+			printf("Doppler effect:\n");
+			test_doppler(s);
+
+		case CONE_SOUND:
+			printf("Cone sound:\n");
+			test_cone_sound(s);
+
+		default:
+			printf("bad input\n");
+	}
+
 
 	return 0;
 }
