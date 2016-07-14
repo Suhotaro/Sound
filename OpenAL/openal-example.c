@@ -19,7 +19,7 @@
 #define RETURNIFERROR(_msg)		\
 	error = alGetError();		\
 	if (error != AL_NO_ERROR) {	\
-		fprintf(stderr, "ERROR: "_msg "\n");	\
+		fprintf(stderr, "ERROR: "_msg " %d\n", error);	\
 		return;		\
 	}
 
@@ -54,7 +54,8 @@ typedef enum
 	SIMPLE = 0,
 	MOVING_SRC,
 	DOPPLER,
-	CONE_SOUND
+	CONE_SOUND,
+	QUEUE,
 } test_num;
 
 typedef struct
@@ -220,16 +221,37 @@ void buffer_delete(BufferPtr b)
 	free(b);
 }
 
-void test_simple(SourcePtr s)
+void test_simple(SourcePtr s, BufferPtr b)
 {
+	ALCenum error;
+
+	alSourcei(s->source, AL_BUFFER, b->buffer);
+	RETURNIFERROR("buffer binding");
+
+	alSourcePlay(s->source);
+	RETURNIFERROR("source playing");
+
+	alGetSourcei(s->source, AL_SOURCE_STATE, &s->state);
+	RETURNIFERROR("source state get");
+
 	while(s->state == AL_PLAYING)
 			alGetSourcei(s->source, AL_SOURCE_STATE, &s->state);
 }
 
-void test_moving_src(SourcePtr s)
+void test_moving_src(SourcePtr s, BufferPtr b)
 {
+	ALCenum error;
 	int x = 10;
 	int dx = -1;
+
+	alSourcei(s->source, AL_BUFFER, b->buffer);
+	RETURNIFERROR("buffer binding");
+
+	alSourcePlay(s->source);
+	RETURNIFERROR("source playing");
+
+	alGetSourcei(s->source, AL_SOURCE_STATE, &s->state);
+	RETURNIFERROR("source state get");
 
 	alSource3f(s->source, AL_POSITION, x, 0, 0);
 
@@ -250,10 +272,20 @@ void test_moving_src(SourcePtr s)
 	}
 }
 
-void test_doppler(SourcePtr s)
+void test_doppler(SourcePtr s, BufferPtr b)
 {
+	ALCenum error;
 	int x = 10;
 	int dx = -1;
+
+	alSourcei(s->source, AL_BUFFER, b->buffer);
+	RETURNIFERROR("buffer binding");
+
+	alSourcePlay(s->source);
+	RETURNIFERROR("source playing");
+
+	alGetSourcei(s->source, AL_SOURCE_STATE, &s->state);
+	RETURNIFERROR("source state get");
 
 	alSourcef(s->source, AL_GAIN, 0.5);
 	alSource3f(s->source, AL_POSITION, x, 0, 0);
@@ -275,13 +307,17 @@ void test_doppler(SourcePtr s)
 	}
 }
 
-void test_cone_sound(SourcePtr s)
+void test_cone_sound(SourcePtr s, BufferPtr b)
 {
 	ALCenum error;
 	int x[16] = {2, 2, 2, 1, 0,-1,-2,-2,-2,-2,-2,-1, 0, 1, 2, 2 };
 	int y[16] = {0,-1,-2,-2,-2,-2,-2,-1, 0, 1, 2, 2, 2, 2, 2, 1 };
 	int clock_wize = 1;
 	int i = 0;
+
+	alSourcei(s->source, AL_BUFFER, b->buffer);
+	alSourcePlay(s->source);
+	alGetSourcei(s->source, AL_SOURCE_STATE, &s->state);
 
 
 	/* TODO: check source axis and axis sound is round in*/
@@ -322,10 +358,74 @@ void test_cone_sound(SourcePtr s)
 	}
 }
 
+void test_queue(SourcePtr s)
+{
+	ALCenum error;
+	ALuint buffs[2];
+	ALuint queue_num;
+
+	/* TODO: Why queue works only with same samples??? */
+	BufferPtr b1 = buffer_create(1, (ALbyte *)"../wav_files/nightfall.wav");
+	BufferPtr b2 = buffer_create(2, (ALbyte *)"../wav_files/nightfall.wav");
+	BufferPtr b3 = buffer_create(3, (ALbyte *)"../wav_files/nightfall.wav");
+
+	if (b1 == NULL || b2 == NULL || b3 == NULL)
+	{
+		printf("Fail create buffers\n");
+		return;
+	}
+
+	buffs[0] = b1->buffer;
+	buffs[1] = b2->buffer;
+	buffs[2] = b3->buffer;
+
+	alSourcei(s->source, AL_LOOPING, 0);
+	RETURNIFERROR("source looping");
+
+	alSourceQueueBuffers(s->source, 2, buffs);
+	RETURNIFERROR("Queue buffers 1");
+
+	alGetSourcei(s->source, AL_BUFFERS_QUEUED, &queue_num);
+	printf("buffers: queued: %d\n", queue_num);
+
+	alSourcePlay(s->source);
+	RETURNIFERROR("source playing");
+
+	alGetSourcei(s->source, AL_SOURCE_STATE, &s->state);
+
+	/* Source is in Play state, queue another buffer */
+	alSourceQueueBuffers(s->source, 1, &buffs[2]);
+	RETURNIFERROR("Queue buffers 1");
+
+	alGetSourcei(s->source, AL_BUFFERS_QUEUED, &queue_num);
+	printf("buffers: queued: %d\n", queue_num);
+
+	int played = 0;
+
+	while(s->state == AL_PLAYING)
+	{
+		alGetSourcei(s->source, AL_SOURCE_STATE, &s->state);
+
+		/* waite untill first sample is finished */
+		usleep(9000000);
+
+
+		alSourceUnqueueBuffers(s->source, 1, &buffs[played]);
+		RETURNIFERROR("Unqueue 1");
+
+		alGetSourcei(s->source, AL_BUFFERS_QUEUED, &queue_num);
+		printf("buffers: queued: %d\n", queue_num);
+
+		if (queue_num == 0)
+			return;
+	}
+}
+
+
 int main(int argc, char **argv)
 {
 	ALCenum error;
-	int test = CONE_SOUND;
+	int test = QUEUE;
 
 	if (argc > 1)
 		test = atoi( argv[1]);
@@ -341,15 +441,6 @@ int main(int argc, char **argv)
 	/* Put here your files */
 	BufferPtr b = buffer_create(1, (ALbyte *)"../wav_files/bs1.wav");
 
-	alSourcei(s->source, AL_BUFFER, b->buffer);
-	RETURNVALIFERROR(-1, "buffer binding");
-
-	alSourcePlay(s->source);
-	RETURNVALIFERROR(-1, "source playing");
-
-	alGetSourcei(s->source, AL_SOURCE_STATE, &s->state);
-	RETURNVALIFERROR(-1, "source state get");
-
 	/*
 	 *  To hear sound with 3D effects samples MUST have only ONE chanell
 	 */
@@ -357,19 +448,35 @@ int main(int argc, char **argv)
 	{
 		case SIMPLE:
 			printf("Simple:\n");
-			test_simple(s);
+			test_simple(s, b);
+
+			break;
 
 		case MOVING_SRC:
 			printf("Moving source:\n");
-			test_moving_src(s);
+			test_moving_src(s, b);
 
 		case DOPPLER:
 			printf("Doppler effect:\n");
-			test_doppler(s);
+			test_doppler(s, b);
+
+			break;
 
 		case CONE_SOUND:
 			printf("Cone sound:\n");
-			test_cone_sound(s);
+			test_cone_sound(s, b);
+
+			break;
+
+		case QUEUE:
+			printf("Queue:\n");
+			test_queue(s);
+
+			break;
+
+
+
+		/* TODO: buffer queue */
 
 		default:
 			printf("bad input\n");
